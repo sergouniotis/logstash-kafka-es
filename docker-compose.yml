@@ -1,0 +1,116 @@
+version: '3.6'
+services:
+  elasticsearch:
+    image: elasticsearch:6.5.4
+    environment:
+      - cluster.name=elasticsearch-cluster
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms1g -Xmx1g"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      app-network:
+        aliases:
+          - elasticsearch
+          - es
+    ports:
+      - 9200:9200
+      - 9300:9300
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - esdata:/usr/share/elasticsearch/data      
+  logstash: 
+    image: docker.elastic.co/logstash/logstash:6.8.23
+    networks:
+      app-network:
+        aliases:
+          - logstash
+    volumes:
+      - ./pipeline/:/usr/share/logstash/pipeline/
+  kibana:
+    image: docker.elastic.co/kibana/kibana:6.4.1
+    networks:
+      app-network:
+        aliases:
+          - kibana
+    ports:
+      - "5601:5601"
+    depends_on:
+      - kafka
+      - elasticsearch      
+  zookeeper:
+    image: wurstmeister/zookeeper:3.4.6
+    networks:
+      app-network:
+        aliases:
+          - zookeeper
+    ports:
+      - "2182:2181"
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - zk_conf:/opt/zookeeper-3.4.6/conf
+      - zk_data:/opt/zookeeper-3.4.6/data
+  kafka:
+    image: wurstmeister/kafka:latest
+    networks:
+      app-network:
+        aliases:
+          - kafka
+    ports:
+      - target: 9092
+        published: 9093
+        protocol: tcp
+        mode: host
+      - target: 9095
+        published: 9095
+        protocol: tcp
+        mode: host
+    environment:
+      KAFKA_BROKER_ID: 101
+      HOSTNAME_COMMAND: "docker info | grep ^Name: | cut -d' ' -f 2"
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_CREATE_TOPICS: "public.events:3:1:compact"
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: "true"
+      KAFKA_LISTENERS: INSIDE://:9092,OUTSIDE://:9095
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT,OUTSIDE:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://:9092,OUTSIDE://${KAFKA_HOSTNAME}:9095
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - kafka_data:/kafka
+    depends_on:
+      - zookeeper
+networks:
+  app-network:
+volumes:
+  esdata:
+    driver: local
+  kafka_data:
+    driver: local
+  zk_data:
+    driver: local
+  zk_conf:
+    driver: local
+  influx_data:
+    driver: local
